@@ -76,57 +76,37 @@ const runChatCompletion = async (messages, useGrammar = false, model) => {
         messages: messages,
       }),
     });
-
-    // check for 429
-    if (response.status === 429) {
-      await new Promise(resolve => setTimeout(resolve, 30000));
-      return runChatCompletion(messages, useGrammar, model);
-    }
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const content = data.choices[0].message.content.trim();
-    const parsed = parseJsonFromMarkdown(content) || JSON.parse(content);
-    return parsed;
   }
   // gemini
-else if (model === 'gemini') {
+  else if (model === 'gemini') {
+    const { GoogleGenerativeAI } = await import('@google/generative-ai');
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const modelName = 'gemini-1.5-flash';
-    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': process.env.GEMINI_API_KEY,
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [{text: messages[0].content}]
-          }
-        ],
-        generationConfig: {
-          temperature: 0,
-          maxOutputTokens: 8192,
-          responseMimeType: "application/json"  // 指定返回 JSON 格式
-        }
-      }),
+
+    const geminiModel = genAI.getGenerativeModel({
+      model: modelName,
+      generationConfig: {
+        temperature: 0,
+        maxOutputTokens: 8192,
+      }
     });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      logError(`HTTP error! status: ${response.status}`, errorData);
-      throw new Error(`Gemini API request failed with status: ${response.status}`);
-    }
+    const result = await geminiModel.generateContent({
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: messages[0].content }]
+        }
+      ],
+      generationConfig: {
+        temperature: 0,
+        maxOutputTokens: 8192,
+      }
+    });
 
-    const data = await response.json();
-    const content = data.candidates[0].content.parts[0].text;
-    const parsed = parseJsonFromMarkdown(content) || JSON.parse(content);
-    return parsed;
-}
+    const response = await result.response.text();
+    return JSON.parse(response);
+  }
   // claude
   else if (model === 'claude') {
     const modelName = 'claude-3-5-sonnet-20240620';
@@ -149,20 +129,8 @@ else if (model === 'gemini') {
         ],
       }),
     });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      logError(`HTTP error! status: ${response.status}`, errorData);
-      throw new Error(`Anthropic API request failed with status: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const content = data.content[0].text;
-    const parsed = parseJsonFromMarkdown(content) || JSON.parse(content);
-    return parsed;
   }
 };
-
 
 const retryWithExponentialBackoff = async (func, retries = MAX_RETRIES) => {
   try {
