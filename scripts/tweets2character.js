@@ -50,7 +50,7 @@ const parseJsonFromMarkdown = (text) => {
 const promptUser = async (question, defaultValue = '') => {
   // Add a newline before the prompt
   console.log();
-  
+
   const { answer } = await inquirer.prompt([
     {
       type: 'input',
@@ -92,6 +92,42 @@ const runChatCompletion = async (messages, useGrammar = false, model) => {
     const parsed = parseJsonFromMarkdown(content) || JSON.parse(content);
     return parsed;
   }
+  // gemini
+else if (model === 'gemini') {
+    const modelName = 'gemini-1.5-flash';
+    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': process.env.GEMINI_API_KEY,
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: "user",
+            parts: [{text: messages[0].content}]
+          }
+        ],
+        generationConfig: {
+          temperature: 0,
+          maxOutputTokens: 8192,
+          responseMimeType: "application/json"  // 指定返回 JSON 格式
+        }
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      logError(`HTTP error! status: ${response.status}`, errorData);
+      throw new Error(`Gemini API request failed with status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const content = data.candidates[0].content.parts[0].text;
+    const parsed = parseJsonFromMarkdown(content) || JSON.parse(content);
+    return parsed;
+}
+  // claude
   else if (model === 'claude') {
     const modelName = 'claude-3-5-sonnet-20240620';
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -119,7 +155,7 @@ const runChatCompletion = async (messages, useGrammar = false, model) => {
       logError(`HTTP error! status: ${response.status}`, errorData);
       throw new Error(`Anthropic API request failed with status: ${response.status}`);
     }
-  
+
     const data = await response.json();
     const content = data.content[0].text;
     const parsed = parseJsonFromMarkdown(content) || JSON.parse(content);
@@ -303,7 +339,7 @@ const chunkText = async (tweets, accountData, archivePath) => {
   const CHUNK_SIZE = 60000; // 50k tokens approx
 
   const cacheDir = path.join(tmpDir, 'cache', path.basename(archivePath, '.zip'));
-  
+
   if (!fs.existsSync(cacheDir)) {
     fs.mkdirSync(cacheDir, { recursive: true });
   }
@@ -453,10 +489,10 @@ const loadApiKey = (model) => {
 const getApiKey = async (model) => {
   const envKey = process.env[`${model.toUpperCase()}_API_KEY`];
   if (validateApiKey(envKey, model)) return envKey;
-  
+
   const cachedKey = loadApiKey(model);
   if (validateApiKey(cachedKey, model)) return cachedKey;
-  
+
   let newKey = '';
   while (!validateApiKey(newKey, model)) {
     newKey = await promptForApiKey(model);
@@ -467,11 +503,13 @@ const getApiKey = async (model) => {
 
 const validateApiKey = (apiKey, model) => {
   if (!apiKey) return false;
-  
+
   if (model === 'openai') {
     return apiKey.trim().startsWith('sk-');
   } else if (model === 'claude') {
     return apiKey.trim().length > 0;
+  } else if (model === 'gemini') {
+    return apiKey.trim().length > 0;  // Gemini API keys are typically long strings
   }
   return false;
 };
@@ -492,9 +530,9 @@ const resumeOrStartNewSession = async (projectCache, archivePath) => {
       clearGenerationCache(archivePath);
     }
   }
-  
+
   if (!projectCache.unfinishedSession) {
-    projectCache.model = await promptUser('Select model (openai/claude): ');
+    projectCache.model = await promptUser('Select model (openai/claude/gemini): ');
     projectCache.basicUserInfo = await promptUser('Enter additional user info that might help the summarizer (real name, nicknames and handles, age, past employment vs current, etc): ');
     projectCache.unfinishedSession = {
       currentChunk: 0,
@@ -502,7 +540,7 @@ const resumeOrStartNewSession = async (projectCache, archivePath) => {
       completed: false
     };
   }
-  
+
   return projectCache;
 };
 
@@ -523,15 +561,15 @@ const saveCharacterData = (character) => {
 const main = async () => {
   try {
     let archivePath = program.args[0];
-    
+
     if (!archivePath) {
       archivePath = await promptUser('Please provide the path to your Twitter archive zip file:');
     }
 
     let projectCache = loadProjectCache(archivePath) || {};
-    
+
     projectCache = await resumeOrStartNewSession(projectCache, archivePath);
-    
+
     const apiKey = await getApiKey(projectCache.model);
     if (!apiKey) {
       throw new Error(`Failed to get a valid API key for ${projectCache.model}`);
