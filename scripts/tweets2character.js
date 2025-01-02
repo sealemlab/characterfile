@@ -318,8 +318,7 @@ const buildConversationThread = async (tweet, tweets, accountData) => {
 
 const chunkText = async (tweets, accountData, archivePath) => {
   const chunks = [];
-
-  const CHUNK_SIZE = 60000; // 50k tokens approx
+  const CHUNK_SIZE = 15000; // 减小到15k tokens左右
 
   const cacheDir = path.join(tmpDir, 'cache', path.basename(archivePath, '.zip'));
 
@@ -328,8 +327,8 @@ const chunkText = async (tweets, accountData, archivePath) => {
   }
 
   if (Array.isArray(tweets)) {
-    for (let i = 0; i < tweets.length; i += 1000) {
-      const tweetChunk = tweets.slice(i, i + 1000);
+    for (let i = 0; i < tweets.length; i += 500) { // 从1000改为500
+      const tweetChunk = tweets.slice(i, i + 500);
       const conversationThreads = await Promise.all(
         tweetChunk.map((tweet) => buildConversationThread(tweet, tweets, accountData))
       );
@@ -338,29 +337,25 @@ const chunkText = async (tweets, accountData, archivePath) => {
 
       for (const thread of conversationThreads) {
         if (thread.length > CHUNK_SIZE) {
-          chunks.push(thread);
+          const subChunks = thread.match(new RegExp(`.{1,${CHUNK_SIZE}}`, 'g')) || [];
+          chunks.push(...subChunks);
           continue;
         }
-        // if length of current push is > threshold, push it and clear it
+        
         if (currentChunk.length + thread.length > CHUNK_SIZE) {
           chunks.push(currentChunk);
           currentChunk = "";
         }
         currentChunk += thread;
       }
-      // if current chunk is not empty, push it
+      
       if (currentChunk.length > 0) {
         chunks.push(currentChunk);
       }
     }
-  } else {
-    console.error('Error: tweets is not an array');
   }
 
-  // Save the unchunked data to cache
-  fs.writeFileSync(path.join(cacheDir, 'unchunked_data.json'), JSON.stringify({ tweets, accountData }));
-
-  // Save the chunks to cache
+  // 保存分块到缓存
   chunks.forEach((chunk, index) => {
     const json = JSON.stringify(chunk);
     fs.writeFileSync(path.join(cacheDir, `chunk_${index}.json`), json);
@@ -428,7 +423,7 @@ program
   .option('--claude <api_key>', 'Claude API key')
   .parse(process.argv);
 
-const limitConcurrency = async (tasks, concurrencyLimit) => {
+const limitConcurrency = async (tasks, concurrencyLimit = 2) => { // 从3改为2
   const results = [];
   const runningTasks = new Set();
   const queue = [...tasks];
@@ -438,9 +433,10 @@ const limitConcurrency = async (tasks, concurrencyLimit) => {
     const task = queue.shift();
     runningTasks.add(task);
     try {
-      results.push(await task());
+      const result = await task();
+      if (result) results.push(result);
+      await new Promise(resolve => setTimeout(resolve, 2000)); // 添加2秒延迟
     } catch (error) {
-      results.push(null);
       logError('Error in concurrent task:', error);
     } finally {
       runningTasks.delete(task);
@@ -448,12 +444,9 @@ const limitConcurrency = async (tasks, concurrencyLimit) => {
     }
   };
 
-  const initialTasks = Array(Math.min(concurrencyLimit, tasks.length))
+  await Promise.all(Array(Math.min(concurrencyLimit, tasks.length))
     .fill()
-    .map(() => runNext());
-
-  await Promise.all(initialTasks);
-  await Promise.all(Array.from(runningTasks));
+    .map(() => runNext()));
 
   return results;
 };
@@ -588,7 +581,7 @@ const main = async () => {
           saveProjectCache(archivePath, projectCache);
           return result;
         });
-        const results = await limitConcurrency(tasks, 3); // Process 3 chunks concurrently
+        const results = await limitConcurrency(tasks, 2); // Process 2 chunks concurrently
 
         const validResults = results.filter(result => result !== null);
         const combined = combineAndDeduplicate(validResults);
