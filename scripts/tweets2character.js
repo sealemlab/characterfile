@@ -318,7 +318,7 @@ const buildConversationThread = async (tweet, tweets, accountData) => {
 
 const chunkText = async (tweets, accountData, archivePath) => {
   const chunks = [];
-  const CHUNK_SIZE = 15000; // 减小到15k tokens左右
+  const CHUNK_SIZE = 5000;
 
   const cacheDir = path.join(tmpDir, 'cache', path.basename(archivePath, '.zip'));
 
@@ -327,8 +327,8 @@ const chunkText = async (tweets, accountData, archivePath) => {
   }
 
   if (Array.isArray(tweets)) {
-    for (let i = 0; i < tweets.length; i += 500) { // 从1000改为500
-      const tweetChunk = tweets.slice(i, i + 500);
+    for (let i = 0; i < tweets.length; i += 200) {
+      const tweetChunk = tweets.slice(i, i + 200);
       const conversationThreads = await Promise.all(
         tweetChunk.map((tweet) => buildConversationThread(tweet, tweets, accountData))
       );
@@ -423,7 +423,7 @@ program
   .option('--claude <api_key>', 'Claude API key')
   .parse(process.argv);
 
-const limitConcurrency = async (tasks, concurrencyLimit = 2) => { // 从3改为2
+const limitConcurrency = async (tasks, concurrencyLimit = 1) => {
   const results = [];
   const runningTasks = new Set();
   const queue = [...tasks];
@@ -435,7 +435,7 @@ const limitConcurrency = async (tasks, concurrencyLimit = 2) => { // 从3改为2
     try {
       const result = await task();
       if (result) results.push(result);
-      await new Promise(resolve => setTimeout(resolve, 2000)); // 添加2秒延迟
+      await new Promise(resolve => setTimeout(resolve, 5000));
     } catch (error) {
       logError('Error in concurrent task:', error);
     } finally {
@@ -581,7 +581,7 @@ const main = async () => {
           saveProjectCache(archivePath, projectCache);
           return result;
         });
-        const results = await limitConcurrency(tasks, 2); // Process 2 chunks concurrently
+        const results = await limitConcurrency(tasks, 1);
 
         const validResults = results.filter(result => result !== null);
         const combined = combineAndDeduplicate(validResults);
