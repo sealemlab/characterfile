@@ -79,33 +79,34 @@ const runChatCompletion = async (messages, useGrammar = false, model) => {
   }
   // gemini
   else if (model === 'gemini') {
-    const { GoogleGenerativeAI } = await import('@google/generative-ai');
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const modelName = 'gemini-1.5-flash';
-
-    const geminiModel = genAI.getGenerativeModel({
-      model: modelName,
-      generationConfig: {
-        temperature: 0,
-        maxOutputTokens: 8192,
-      }
+    const modelName = 'gemini-2.0-flash-exp';
+    const response = await fetch('https://generativelanguage.googleapis.com/v1/models/' + modelName + ':generateContent', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.GEMINI_API_KEY}`
+        },
+        body: JSON.stringify({
+            contents: [{
+                role: "user",
+                parts: [{ text: messages[0].content }]
+            }],
+            generationConfig: {
+                temperature: 0,
+                maxOutputTokens: 8192,
+                topK: 40,
+                topP: 0.95
+            }
+        })
     });
 
-    const result = await geminiModel.generateContent({
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: messages[0].content }]
-        }
-      ],
-      generationConfig: {
-        temperature: 0,
-        maxOutputTokens: 8192,
-      }
-    });
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(`Gemini API error: ${response.status} - ${JSON.stringify(error)}`);
+    }
 
-    const response = await result.response.text();
-    return JSON.parse(response);
+    const data = await response.json();
+    return JSON.parse(data.candidates[0].content.parts[0].text);
   }
   // claude
   else if (model === 'claude') {
