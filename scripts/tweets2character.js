@@ -80,11 +80,12 @@ const runChatCompletion = async (messages, useGrammar = false, model) => {
   // gemini
   else if (model === 'gemini') {
     const modelName = 'gemini-2.0-flash-exp';
-    const response = await fetch('https://generativelanguage.googleapis.com/v1/models/' + modelName + ':generateContent', {
+    const apiKey = process.env.GEMINI_API_KEY;
+    
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/${modelName}:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${process.env.GEMINI_API_KEY}`
+            'Content-Type': 'application/json'
         },
         body: JSON.stringify({
             contents: [{
