@@ -102,11 +102,24 @@ const runChatCompletion = async (messages, useGrammar = false, model) => {
 
     if (!response.ok) {
         const error = await response.json();
+        logError('Gemini API Response:', error);
         throw new Error(`Gemini API error: ${response.status} - ${JSON.stringify(error)}`);
     }
 
-    const data = await response.json();
-    return JSON.parse(data.candidates[0].content.parts[0].text);
+    try {
+        const data = await response.json();
+        const text = data.candidates[0].content.parts[0].text;
+        const parsed = parseJsonFromMarkdown(text) || JSON.parse(text);
+        
+        if (!parsed || typeof parsed !== 'object') {
+            throw new Error('Invalid response format');
+        }
+        
+        return parsed;
+    } catch (error) {
+        logError('Error parsing Gemini response:', error);
+        throw error;
+    }
   }
   // claude
   else if (model === 'claude') {
