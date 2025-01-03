@@ -7,3 +7,12 @@ node_modules/
 twitter-*/
 model.gguf
 knowledge/
+
+# Character related files
+character.json
+character/
+characters/
+
+# Cache and temporary files
+tmp/
+.eliza/

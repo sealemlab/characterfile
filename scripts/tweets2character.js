@@ -318,7 +318,8 @@ const buildConversationThread = async (tweet, tweets, accountData) => {
 
 const chunkText = async (tweets, accountData, archivePath) => {
   const chunks = [];
-  const CHUNK_SIZE = 5000;
+  const CHUNK_SIZE = 2000;
+  const MAX_CHUNK_COUNT = 10;
 
   const cacheDir = path.join(tmpDir, 'cache', path.basename(archivePath, '.zip'));
 
@@ -327,18 +328,19 @@ const chunkText = async (tweets, accountData, archivePath) => {
   }
 
   if (Array.isArray(tweets)) {
-    for (let i = 0; i < tweets.length; i += 200) {
-      const tweetChunk = tweets.slice(i, i + 200);
+    const limitedTweets = tweets.slice(0, 1000);
+
+    for (let i = 0; i < limitedTweets.length; i += 100) {
+      const tweetChunk = limitedTweets.slice(i, i + 100);
       const conversationThreads = await Promise.all(
-        tweetChunk.map((tweet) => buildConversationThread(tweet, tweets, accountData))
+        tweetChunk.map((tweet) => buildConversationThread(tweet, limitedTweets, accountData))
       );
 
       let currentChunk = "";
 
       for (const thread of conversationThreads) {
         if (thread.length > CHUNK_SIZE) {
-          const subChunks = thread.match(new RegExp(`.{1,${CHUNK_SIZE}}`, 'g')) || [];
-          chunks.push(...subChunks);
+          chunks.push(thread.substring(0, CHUNK_SIZE));
           continue;
         }
         
@@ -351,6 +353,10 @@ const chunkText = async (tweets, accountData, archivePath) => {
       
       if (currentChunk.length > 0) {
         chunks.push(currentChunk);
+      }
+
+      if (chunks.length >= MAX_CHUNK_COUNT) {
+        break;
       }
     }
   }
